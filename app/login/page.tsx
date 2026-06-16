@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { parseJsonResponse } from '@/lib/apiClient';
+import PasswordField from '@/app/ui/PasswordField';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -31,8 +32,8 @@ export default function LoginPage() {
       <h1 style={{ color: 'var(--fhdc-blue-dark)', marginTop: 0 }}>FHDC RecallDesk</h1>
       <p className="note">Sign in to manage patient recalls, call tracking and recall staff payments.</p>
       <form onSubmit={submit} className="form-grid">
-        <div className="form-field full"><label>Email</label><input value={email} onChange={e => setEmail(e.target.value)} type="email" required /></div>
-        <div className="form-field full"><label>Password</label><input value={password} onChange={e => setPassword(e.target.value)} type="password" required /></div>
+        <div className="form-field full"><label>Email</label><input value={email} onChange={e => setEmail(e.target.value)} type="email" autoComplete="username" required /></div>
+        <div className="form-field full"><label>Password</label><PasswordField value={password} onChange={setPassword} required autoComplete="current-password" /></div>
         {error && <div className="form-field full error">{error}</div>}
         <div className="form-field full"><button disabled={busy}>{busy ? 'Signing in...' : 'Sign in'}</button></div>
       </form>

@@ -1,14 +1,14 @@
-# FHDC RecallDesk Layout and Conversion Bonus Patch
+# FHDC RecallDesk Performance and Show-Up Table Patch
 
-This patch improves the Current Users table actions and adds the 5% booking conversion bonus band.
+This patch improves the current Supabase bridge version by:
 
-Changes included:
-- Smaller, cleaner user action buttons in the Current Users table.
-- Better user status and role badges.
-- Payment assumptions now include Conversion Bonus at 5% = 1,000.
-- Payment calculation logic now pays the 5% conversion bonus where applicable.
-- Existing local databases are automatically merged with new default assumptions, so the 5% band appears even if data/recalldesk-db.json already exists.
-- Payment page now displays a compact Booking Conversion Bonus Table.
+1. Adding a short server-side app-store cache so dashboard, patients, settings and payments do not read the full Supabase JSON store on every tab navigation.
+2. Updating the cache immediately after every write so normal single-instance use stays fresh.
+3. Optimising the calling list patient API by calculating call counts once instead of filtering call attempts repeatedly for every patient row.
+4. Adding the Show Up Quality Gate table beside the Booking Conversion Bonus Table on the Payments page.
+5. Adding a small CSS helper for the assumption tables.
 
-Apply by extracting into the fhdc-recalldesk folder and replacing files.
-Then clear `.next` and restart the app.
+Optional environment setting:
+APP_STORE_CACHE_TTL_MS=120000
+
+Default cache is 120 seconds. Set to 30000 if you want a shorter cache during testing.

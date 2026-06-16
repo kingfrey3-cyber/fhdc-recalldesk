@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { parseJsonResponse } from '@/lib/apiClient';
+import PasswordField from '@/app/ui/PasswordField';
 
 function roleLabel(role?: string) {
   return String(role || '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
@@ -60,9 +61,9 @@ export default function AccountPage() {
         <div className="card half">
           <h3>Change Password</h3>
           <form onSubmit={changePassword} className="form-grid">
-            <div className="form-field full"><label>Current password</label><input type="password" value={form.currentPassword} onChange={e => setForm({ ...form, currentPassword: e.target.value })} required /></div>
-            <div className="form-field full"><label>New password</label><input type="password" value={form.newPassword} onChange={e => setForm({ ...form, newPassword: e.target.value })} required minLength={8} /></div>
-            <div className="form-field full"><label>Confirm new password</label><input type="password" value={form.confirmPassword} onChange={e => setForm({ ...form, confirmPassword: e.target.value })} required minLength={8} /></div>
+            <div className="form-field full"><label>Current password</label><PasswordField value={form.currentPassword} onChange={value => setForm({ ...form, currentPassword: value })} required autoComplete="current-password" /></div>
+            <div className="form-field full"><label>New password</label><PasswordField value={form.newPassword} onChange={value => setForm({ ...form, newPassword: value })} required minLength={8} autoComplete="new-password" /></div>
+            <div className="form-field full"><label>Confirm new password</label><PasswordField value={form.confirmPassword} onChange={value => setForm({ ...form, confirmPassword: value })} required minLength={8} autoComplete="new-password" /></div>
             <div className="form-field full"><button disabled={busy}>{busy ? 'Changing...' : 'Change Password'}</button></div>
           </form>
         </div>

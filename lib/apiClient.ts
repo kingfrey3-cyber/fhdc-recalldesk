@@ -1,19 +1,31 @@
+function cleanErrorText(text: string) {
+  return String(text || '')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 700);
+}
+
+function friendlyError(text: string, status?: number) {
+  const raw = String(text || '');
+  const clean = cleanErrorText(raw);
+  if (raw.includes('520') || clean.toLowerCase().includes('bad gateway') || raw.includes('<!DOCTYPE')) {
+    return 'Supabase rejected or timed out during a large save. Try again after applying the operational upload patch, and upload in smaller batches first.';
+  }
+  return clean || `Request failed${status ? ` with status ${status}` : ''}.`;
+}
+
 export async function parseJsonResponse(res: Response) {
   const contentType = res.headers.get('content-type') || '';
   const text = await res.text();
 
   if (!contentType.includes('application/json')) {
-    const cleanText = text
-      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-      .replace(/<[^>]*>/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim()
-      .slice(0, 500);
-
     throw new Error(
-      `Server returned ${res.status} ${res.statusText || ''} instead of JSON. ` +
-      `${cleanText || 'This usually means an API route crashed before it could respond.'}`
+      `Server returned ${res.status} ${res.statusText || ''} instead of JSON. ` + friendlyError(text, res.status)
     );
   }
 
@@ -25,7 +37,7 @@ export async function parseJsonResponse(res: Response) {
   }
 
   if (!res.ok) {
-    throw new Error(data?.error || `Request failed with status ${res.status}`);
+    throw new Error(friendlyError(data?.error || data?.message || `Request failed with status ${res.status}`, res.status));
   }
 
   return data;

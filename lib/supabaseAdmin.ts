@@ -1,3 +1,18 @@
-// FHDC RecallDesk now runs in local mode by default.
-// This placeholder remains only so older imports do not break during development.
-export const supabaseAdmin = null as any;
+import { createClient } from '@supabase/supabase-js';
+
+export function getSupabaseAdmin() {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key || url.includes('your-') || key.includes('your-')) {
+    return null;
+  }
+
+  return createClient(url, key, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false
+    }
+  });
+}
+
+export const supabaseAdmin = getSupabaseAdmin();

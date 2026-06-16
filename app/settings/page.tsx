@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { parseJsonResponse } from '@/lib/apiClient';
+import PasswordField from '@/app/ui/PasswordField';
 
 function roleLabel(role?: string) {
   return String(role || '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
@@ -142,7 +143,7 @@ export default function SettingsPage() {
             <div className="form-field"><label>Name</label><input value={form.name} onChange={e => setForm({...form, name:e.target.value})} required /></div>
             <div className="form-field"><label>Email</label><input value={form.email} onChange={e => setForm({...form, email:e.target.value})} type="email" required /></div>
             <div className="form-field"><label>Role</label><select value={form.role} onChange={e => setForm({...form, role:e.target.value})}><option value="admin">Admin</option><option value="manager">Manager</option><option value="recall_staff">Recall Staff</option><option value="verifier">Verifier</option><option value="finance">Finance</option><option value="viewer">Viewer</option></select></div>
-            <div className="form-field"><label>Temporary password</label><input value={form.password} onChange={e => setForm({...form, password:e.target.value})} /></div>
+            <div className="form-field"><label>Temporary password</label><PasswordField value={form.password} onChange={value => setForm({...form, password:value})} minLength={8} autoComplete="new-password" /></div>
             <div className="form-field full"><button>Create User</button></div>
           </form>
         </div>}
@@ -167,7 +168,7 @@ export default function SettingsPage() {
           <h3>Reset Password: {resetUser.name}</h3>
           <p className="note">This does not require the staff member's old password. Give them the temporary password and ask them to change it under Account after login.</p>
           <form onSubmit={resetStaffPassword} className="form-grid">
-            <div className="form-field"><label>New temporary password</label><input value={resetPassword} onChange={e => setResetPassword(e.target.value)} minLength={8} required /></div>
+            <div className="form-field"><label>New temporary password</label><PasswordField value={resetPassword} onChange={setResetPassword} minLength={8} required autoComplete="new-password" /></div>
             <div className="form-field" style={{ alignSelf: 'end' }}><button type="submit">Reset Password</button> <button type="button" className="secondary" onClick={() => setResetUser(null)}>Cancel</button></div>
           </form>
         </div>}

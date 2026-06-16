@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { parseJsonResponse } from '@/lib/apiClient';
+import PasswordField from '@/app/ui/PasswordField';
 
 export default function SetupPage() {
   const router = useRouter();
@@ -35,8 +36,8 @@ export default function SetupPage() {
       <p className="note">This page works only before any system users exist. Default setup key: fhdc-admin-setup-2026. You may change it later in .env.local if needed.</p>
       <form onSubmit={submit} className="form-grid">
         <div className="form-field full"><label>Name</label><input value={form.name} onChange={e => update('name', e.target.value)} required /></div>
-        <div className="form-field full"><label>Email</label><input value={form.email} onChange={e => update('email', e.target.value)} type="email" required /></div>
-        <div className="form-field full"><label>Password</label><input value={form.password} onChange={e => update('password', e.target.value)} type="password" required /></div>
+        <div className="form-field full"><label>Email</label><input value={form.email} onChange={e => update('email', e.target.value)} type="email" autoComplete="username" required /></div>
+        <div className="form-field full"><label>Password</label><PasswordField value={form.password} onChange={value => update('password', value)} required minLength={8} autoComplete="new-password" /></div>
         <div className="form-field full"><label>Admin Setup Key</label><input value={form.setupKey} onChange={e => update('setupKey', e.target.value)} required /></div>
         {error && <div className="form-field full error">{error}</div>}
         {message && <div className="form-field full success">{message}</div>}

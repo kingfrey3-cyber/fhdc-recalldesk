@@ -56,15 +56,27 @@ export default function PaymentsPage() {
           <h3>Payment Assumptions</h3>
           {error && <div className="alert error">{error}</div>}
           {message && <div className="alert success">{message}</div>}
-          <div className="mini-table-block">
-            <h4>Booking Conversion Bonus Table</h4>
-            <div className="table-wrap compact-table"><table><thead><tr><th>Minimum conversion</th><th>Bonus</th></tr></thead><tbody>
-              <tr><td>0%</td><td>0</td></tr>
-              <tr><td>5%</td><td>{Number(assumptionMap.conversion_bonus_5_percent || 1000).toLocaleString()}</td></tr>
-              <tr><td>8%</td><td>{Number(assumptionMap.conversion_bonus_8_percent || 2000).toLocaleString()}</td></tr>
-              <tr><td>10%</td><td>{Number(assumptionMap.conversion_bonus_10_percent || 4000).toLocaleString()}</td></tr>
-              <tr><td>12.5%</td><td>{Number(assumptionMap.conversion_bonus_12_5_percent || 6000).toLocaleString()}</td></tr>
-            </tbody></table></div>
+          <div className="assumption-tables">
+            <div className="mini-table-block">
+              <h4>Booking Conversion Bonus Table</h4>
+              <div className="table-wrap compact-table"><table><thead><tr><th>Minimum conversion</th><th>Bonus</th></tr></thead><tbody>
+                <tr><td>0%</td><td>0</td></tr>
+                <tr><td>5%</td><td>{Number(assumptionMap.conversion_bonus_5_percent || 1000).toLocaleString()}</td></tr>
+                <tr><td>8%</td><td>{Number(assumptionMap.conversion_bonus_8_percent || 2000).toLocaleString()}</td></tr>
+                <tr><td>10%</td><td>{Number(assumptionMap.conversion_bonus_10_percent || 4000).toLocaleString()}</td></tr>
+                <tr><td>12.5%</td><td>{Number(assumptionMap.conversion_bonus_12_5_percent || 6000).toLocaleString()}</td></tr>
+              </tbody></table></div>
+            </div>
+
+            <div className="mini-table-block">
+              <h4>Show Up Quality Gate</h4>
+              <div className="table-wrap compact-table"><table><thead><tr><th>Minimum show up rate</th><th>Booking bonus multiplier</th></tr></thead><tbody>
+                <tr><td>0%</td><td>0%</td></tr>
+                <tr><td>40%</td><td>{(Number(assumptionMap.show_up_multiplier_40_percent || 0.5) * 100).toFixed(0)}%</td></tr>
+                <tr><td>50%</td><td>{(Number(assumptionMap.show_up_multiplier_50_percent || 0.75) * 100).toFixed(0)}%</td></tr>
+                <tr><td>60%</td><td>{(Number(assumptionMap.show_up_multiplier_60_percent || 1) * 100).toFixed(0)}%</td></tr>
+              </tbody></table></div>
+            </div>
           </div>
           <div className="form-grid">
             {assumptions.map((a, idx) => <div className="form-field" key={a.key}><label>{a.label}</label><input value={a.value} onChange={e => { const copy=[...assumptions]; copy[idx]={...copy[idx], value:e.target.value}; setAssumptions(copy); }} /></div>)}
