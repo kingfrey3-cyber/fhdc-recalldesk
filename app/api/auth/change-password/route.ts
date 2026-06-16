@@ -1,0 +1,35 @@
+import { NextResponse } from 'next/server';
+import bcrypt from 'bcryptjs';
+import { requireUser } from '@/lib/auth';
+import { updateStore, nowIso } from '@/lib/localDb';
+import { writeAudit } from '@/lib/audit';
+
+export async function POST(req: Request) {
+  try {
+    const session = await requireUser();
+    const body = await req.json();
+    const currentPassword = String(body.currentPassword || '');
+    const newPassword = String(body.newPassword || '');
+    const confirmPassword = String(body.confirmPassword || '');
+
+    if (!currentPassword) throw new Error('Current password is required');
+    if (newPassword.length < 8) throw new Error('New password must be at least 8 characters');
+    if (newPassword !== confirmPassword) throw new Error('New password and confirmation do not match');
+
+    await updateStore(async store => {
+      const user = store.app_users.find(u => u.id === session.id && u.is_active);
+      if (!user) throw new Error('User not found');
+      const ok = await bcrypt.compare(currentPassword, user.password_hash);
+      if (!ok) throw new Error('Current password is incorrect');
+      user.password_hash = await bcrypt.hash(newPassword, 12);
+      (user as any).password_changed_at = nowIso();
+      return true;
+    });
+
+    await writeAudit(session.id, 'CHANGE_OWN_PASSWORD', 'app_user', session.id, {});
+    return NextResponse.json({ ok: true });
+  } catch (error: any) {
+    const status = error.message === 'UNAUTHENTICATED' ? 401 : error.message === 'FORBIDDEN' ? 403 : 400;
+    return NextResponse.json({ error: error.message || 'Failed to change password' }, { status });
+  }
+}

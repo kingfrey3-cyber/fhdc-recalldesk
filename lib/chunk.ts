@@ -1,0 +1,5 @@
+export function chunkArray<T>(items: T[], size = 500): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
