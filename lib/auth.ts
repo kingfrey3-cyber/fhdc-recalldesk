@@ -1,6 +1,6 @@
 import { cookies } from 'next/headers';
 import { SignJWT, jwtVerify } from 'jose';
-import { readStore, type AppRole, publicUser } from './localDb';
+import type { AppRole } from './localDb';
 
 export type { AppRole } from './localDb';
 
@@ -11,7 +11,7 @@ export type SessionUser = {
   role: AppRole;
 };
 
-const cookieName = 'fhdc_recalldesk_session';
+export const cookieName = 'fhdc_recalldesk_session';
 
 function getSecret() {
   const secret = process.env.APP_SESSION_SECRET || 'fhdc-recalldesk-local-development-secret-2026';
@@ -37,7 +37,14 @@ export async function createSession(user: SessionUser) {
 
 export async function clearSession() {
   const cookieStore = await cookies();
-  cookieStore.set(cookieName, '', { path: '/', maxAge: 0 });
+  cookieStore.set(cookieName, '', {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    path: '/',
+    maxAge: 0,
+    expires: new Date(0)
+  });
 }
 
 export async function getSessionUser(): Promise<SessionUser | null> {
@@ -45,15 +52,21 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     const cookieStore = await cookies();
     const token = cookieStore.get(cookieName)?.value;
     if (!token) return null;
+
     const verified = await jwtVerify(token, getSecret());
     const payload = verified.payload as any;
-    if (!payload?.id || !payload?.email) return null;
+    if (!payload?.id || !payload?.email || !payload?.role) return null;
 
-    const store = await readStore();
-    const user = store.app_users.find(u => u.id === payload.id && u.is_active);
-    if (!user) return null;
-    const safe = publicUser(user) as SessionUser;
-    return { id: safe.id, name: safe.name, email: safe.email, role: safe.role };
+    // Important performance choice:
+    // Do not read the full Supabase app store on every navigation just to validate /api/me.
+    // The signed JWT is enough for normal navigation and role-based shell display.
+    // Admin user edits will take effect after the user's current session expires or after logout/login.
+    return {
+      id: String(payload.id),
+      name: String(payload.name || payload.email),
+      email: String(payload.email),
+      role: payload.role as AppRole
+    };
   } catch {
     return null;
   }

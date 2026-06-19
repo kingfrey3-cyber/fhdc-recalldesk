@@ -21,21 +21,25 @@ export default function SettingsPage() {
   const [resetPassword, setResetPassword] = useState('ChangeMe123!');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
 
   const canAdmin = useMemo(() => me?.role === 'admin', [me]);
   const canManage = useMemo(() => ['admin','manager'].includes(me?.role), [me]);
 
   async function load() {
     setError('');
+    setLoading(true);
     try {
       const [meData, usersData] = await Promise.all([
-        fetch('/api/me').then(parseJsonResponse),
-        fetch('/api/users').then(parseJsonResponse)
+        fetch('/api/me', { cache: 'no-store' }).then(parseJsonResponse),
+        fetch('/api/users', { cache: 'no-store' }).then(parseJsonResponse)
       ]);
       setMe(meData.user);
       setUsers(usersData.users || []);
     } catch (error: any) {
       setError(error.message || 'Failed to load users');
+    } finally {
+      setLoading(false);
     }
   }
   useEffect(() => { load(); }, []);
@@ -57,6 +61,7 @@ export default function SettingsPage() {
     setMessage(''); setError(''); setResetUser(null);
     setEditUser(user);
     setEditForm({ name: user.name || '', email: user.email || '', role: user.role || 'recall_staff', is_active: Boolean(user.is_active) });
+    setTimeout(() => document.getElementById('edit-user-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
   }
 
   async function saveEdit(e: React.FormEvent) {
@@ -81,6 +86,7 @@ export default function SettingsPage() {
     setMessage(''); setError(''); setEditUser(null);
     setResetUser(user);
     setResetPassword('ChangeMe123!');
+    setTimeout(() => document.getElementById('reset-password-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
   }
 
   async function resetStaffPassword(e: React.FormEvent) {
@@ -132,7 +138,9 @@ export default function SettingsPage() {
       {error && <div className="alert error" style={{ marginTop: 18 }}>{error}</div>}
       {message && <div className="alert success" style={{ marginTop: 18 }}>{message}</div>}
 
-      {!me && <div className="card" style={{ marginTop: 18 }}><h3>Not logged in</h3><p className="note">Please log in again before managing users.</p></div>}
+      {loading && <div className="card" style={{ marginTop: 18 }}><p className="note">Loading user settings...</p></div>}
+
+      {!loading && !me && <div className="card" style={{ marginTop: 18 }}><h3>Not logged in</h3><p className="note">Please log in again before managing users.</p></div>}
 
       {me && !canManage && <div className="card" style={{ marginTop: 18 }}><h3>Limited access</h3><p className="note">This page is for Admin and Manager accounts. Recall Staff should use the Calling List and Account pages only.</p></div>}
 
@@ -148,28 +156,46 @@ export default function SettingsPage() {
           </form>
         </div>}
 
-        <div className={canAdmin ? 'card half' : 'card full'}>
+        <div className="card full users-card">
           <h3>Current Users</h3>
-          <div className="table-wrap"><table className="users-table"><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Active</th>{canAdmin && <th className="actions-header">Actions</th>}</tr></thead><tbody>{users.length === 0 && <tr><td colSpan={canAdmin ? 5 : 4}>No users loaded yet.</td></tr>}{users.map(u => <tr key={u.id}><td><strong>{u.name}</strong></td><td className="email-cell">{u.email}</td><td><span className="badge">{roleLabel(u.role)}</span></td><td>{u.is_active ? <span className="badge green">Active</span> : <span className="badge red">Inactive</span>}</td>{canAdmin && <td className="actions-cell"><div className="table-actions"><button type="button" className="secondary small" onClick={() => openEdit(u)}>Edit</button><button type="button" className="ghost small" onClick={() => openReset(u)}>Reset Password</button></div></td>}</tr>)}</tbody></table></div>
+          {users.length === 0 && <p className="note">No users loaded yet.</p>}
+          <div className="user-card-list">
+            {users.map(u => (
+              <div key={u.id} className="user-row-card">
+                <div className="user-main">
+                  <strong>{u.name}</strong>
+                  <span>{u.email}</span>
+                </div>
+                <div className="user-badges">
+                  <span className="badge">{roleLabel(u.role)}</span>
+                  {u.is_active ? <span className="badge green">Active</span> : <span className="badge red">Inactive</span>}
+                </div>
+                {canAdmin && <div className="user-actions">
+                  <button type="button" className="secondary small" onClick={() => openEdit(u)}>Edit</button>
+                  <button type="button" className="ghost small" onClick={() => openReset(u)}>Reset Password</button>
+                </div>}
+              </div>
+            ))}
+          </div>
         </div>
 
-        {canAdmin && editUser && <div className="card full">
+        {canAdmin && editUser && <div id="edit-user-panel" className="card full">
           <h3>Edit User: {editUser.name}</h3>
           <form onSubmit={saveEdit} className="form-grid">
             <div className="form-field"><label>Name</label><input value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} required /></div>
             <div className="form-field"><label>Email</label><input type="email" value={editForm.email} onChange={e => setEditForm({ ...editForm, email: e.target.value })} required /></div>
             <div className="form-field"><label>Role</label><select value={editForm.role} onChange={e => setEditForm({ ...editForm, role: e.target.value })}><option value="admin">Admin</option><option value="manager">Manager</option><option value="recall_staff">Recall Staff</option><option value="verifier">Verifier</option><option value="finance">Finance</option><option value="viewer">Viewer</option></select></div>
             <div className="form-field"><label>Active</label><select value={String(editForm.is_active)} onChange={e => setEditForm({ ...editForm, is_active: e.target.value === 'true' })}><option value="true">Active</option><option value="false">Deactivated</option></select></div>
-            <div className="form-field full"><button type="submit">Save Changes</button> <button type="button" className="secondary" onClick={() => setEditUser(null)}>Cancel</button></div>
+            <div className="form-field full button-row"><button type="submit">Save Changes</button><button type="button" className="secondary" onClick={() => setEditUser(null)}>Cancel</button></div>
           </form>
         </div>}
 
-        {canAdmin && resetUser && <div className="card full">
+        {canAdmin && resetUser && <div id="reset-password-panel" className="card full">
           <h3>Reset Password: {resetUser.name}</h3>
           <p className="note">This does not require the staff member's old password. Give them the temporary password and ask them to change it under Account after login.</p>
           <form onSubmit={resetStaffPassword} className="form-grid">
             <div className="form-field"><label>New temporary password</label><PasswordField value={resetPassword} onChange={setResetPassword} minLength={8} required autoComplete="new-password" /></div>
-            <div className="form-field" style={{ alignSelf: 'end' }}><button type="submit">Reset Password</button> <button type="button" className="secondary" onClick={() => setResetUser(null)}>Cancel</button></div>
+            <div className="form-field button-row" style={{ alignSelf: 'end' }}><button type="submit">Reset Password</button><button type="button" className="secondary" onClick={() => setResetUser(null)}>Cancel</button></div>
           </form>
         </div>}
 
