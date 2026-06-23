@@ -37,7 +37,7 @@ export default function LoginPage() {
         {error && <div className="form-field full error">{error}</div>}
         <div className="form-field full"><button disabled={busy}>{busy ? 'Signing in...' : 'Sign in'}</button></div>
       </form>
-      <p className="footer-note">First time? Go to /setup to create the first admin.</p>
+      <p className="footer-note">Welcome. FHDC -Healthy Teeth for the whole Family.</p>
     </div>
   );
 }
