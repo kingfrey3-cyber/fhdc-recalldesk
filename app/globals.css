@@ -270,36 +270,3 @@ th, td { padding: 13px 14px; border-bottom: 1px solid #e8eef4; vertical-align: m
   .user-badges { min-width: 0; }
   .user-actions { margin-left: 0; justify-content: flex-start; }
 }
-
-/* --- FHDC RecallDesk operational stability UI fixes: user cards, actions, and call flow --- */
-.users-card { width: 100%; overflow: hidden; }
-.user-row-card {
-  display: grid !important;
-  grid-template-columns: minmax(240px, 1.4fr) minmax(190px, .8fr) minmax(280px, auto);
-  align-items: center;
-  gap: 16px;
-}
-.user-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  justify-content: flex-end;
-  align-items: center;
-  min-width: 0;
-  max-width: 100%;
-  margin-left: 0 !important;
-}
-.user-actions button.small {
-  min-width: auto;
-  white-space: nowrap;
-}
-.user-actions button.ghost.small { max-width: 170px; }
-.user-actions button.danger.small {
-  background: var(--danger);
-  color: #fff;
-  box-shadow: 0 8px 18px rgba(185,28,28,.16);
-}
-@media (max-width: 1050px) {
-  .user-row-card { grid-template-columns: 1fr; }
-  .user-actions { justify-content: flex-start; }
-}

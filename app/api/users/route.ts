@@ -31,7 +31,7 @@ export async function POST(req: Request) {
     await writeAudit(user.id, 'CREATE_USER', 'app_user', created.id, { email: created.email, role: created.role });
     return NextResponse.json({ user: created });
   } catch (error: any) {
-    const status = error.message === 'UNAUTHENTICATED' ? 401 : error.message === 'FORBIDDEN' ? 403 : String(error.message || '').includes('already exists') ? 409 : 500;
+    const status = error.message === 'UNAUTHENTICATED' ? 401 : error.message === 'FORBIDDEN' ? 403 : 500;
     return NextResponse.json({ error: error.message || 'Failed to create user' }, { status });
   }
 }

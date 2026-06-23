@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireUser } from '@/lib/auth';
-import { readStore, publicUser, clearStoreCache } from '@/lib/localDb';
+import { readStore, publicUser } from '@/lib/localDb';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -14,10 +14,8 @@ export async function GET(req: Request) {
     const staffId = (url.searchParams.get('staffId') || '').trim();
     const mine = url.searchParams.get('mine') === '1';
     const limit = Math.min(Number(url.searchParams.get('limit') || 250), 1000);
-    const fresh = url.searchParams.get('fresh') === '1';
-    if (fresh) clearStoreCache();
 
-    const store = await readStore({ fresh });
+    const store = await readStore();
     const usersById = new Map(store.app_users.map(u => [u.id, publicUser(u)]));
 
     const callCountByPatient = new Map<string, number>();

@@ -35,8 +35,6 @@ export default function CallingPage() {
   const [error, setError] = useState('');
   const [assign, setAssign] = useState({ staffId: '', count: 100 });
   const [call, setCall] = useState(blankCall);
-  const [assignBusy, setAssignBusy] = useState(false);
-  const [saveBusy, setSaveBusy] = useState(false);
 
   const canManage = useMemo(() => ['admin','manager'].includes(me?.role), [me]);
 
@@ -51,7 +49,6 @@ export default function CallingPage() {
 
       const params = new URLSearchParams();
       params.set('search', activeSearch);
-      params.set('fresh', '1');
       if (status) params.set('status', status);
       if (['admin','manager'].includes(currentUser.role) && staffFilter) params.set('staffId', staffFilter);
 
@@ -74,21 +71,13 @@ export default function CallingPage() {
   }
 
   async function assignBatch(e: React.FormEvent) {
-    e.preventDefault();
-    if (assignBusy) return;
-    setMessage(''); setError('');
-    setAssignBusy(true);
+    e.preventDefault(); setMessage(''); setError('');
     try {
       const res = await fetch('/api/patients/assign', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(assign) });
       const data = await parseJsonResponse(res);
-      setMessage(`${data.assigned} patients assigned to ${data.staff?.name || 'selected staff'}.`);
-      setStaffFilter(assign.staffId);
-      setStatus('assigned');
-      await load('');
+      setMessage(`${data.assigned} patients assigned.`); load();
     } catch (error: any) {
       setError(error.message || 'Assignment failed');
-    } finally {
-      setAssignBusy(false);
     }
   }
 
@@ -126,7 +115,7 @@ export default function CallingPage() {
     setCall(blankCall);
     setError('');
     try {
-      const data = await fetch(`/api/calls?fresh=1&patientId=${encodeURIComponent(patient.id)}`).then(parseJsonResponse);
+      const data = await fetch(`/api/calls?patientId=${encodeURIComponent(patient.id)}`).then(parseJsonResponse);
       setPatientCalls(data.calls || []);
     } catch (error: any) {
       setPatientCalls([]);
@@ -136,15 +125,14 @@ export default function CallingPage() {
 
   async function refreshPatientCalls(patientId = selected?.id) {
     if (!patientId) return;
-    const data = await fetch(`/api/calls?fresh=1&patientId=${encodeURIComponent(patientId)}`).then(parseJsonResponse);
+    const data = await fetch(`/api/calls?patientId=${encodeURIComponent(patientId)}`).then(parseJsonResponse);
     setPatientCalls(data.calls || []);
   }
 
   async function saveCall(e: React.FormEvent) {
     e.preventDefault();
-    if (!selected || saveBusy) return;
+    if (!selected) return;
     setMessage(''); setError('');
-    setSaveBusy(true);
     try {
       const url = editingCall ? `/api/calls/${editingCall.id}` : '/api/calls';
       const method = editingCall ? 'PUT' : 'POST';
@@ -154,11 +142,9 @@ export default function CallingPage() {
       setCall(blankCall);
       setEditingCall(null);
       await refreshPatientCalls(selected.id);
-      await load();
+      load();
     } catch (error: any) {
       setError(error.message || 'Failed to save call');
-    } finally {
-      setSaveBusy(false);
     }
   }
 
@@ -197,7 +183,7 @@ export default function CallingPage() {
           <form onSubmit={assignBatch} className="form-grid">
             <div className="form-field full"><label>Recall staff</label><select value={assign.staffId} onChange={e => setAssign({ ...assign, staffId: e.target.value })}><option value="">Select staff</option>{users.filter(u => ['recall_staff','manager'].includes(u.role)).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
             <div className="form-field full"><label>Number of patients</label><input type="number" min="1" value={assign.count} onChange={e => setAssign({ ...assign, count: Number(e.target.value) })} /></div>
-            <div className="form-field full"><button disabled={assignBusy}>{assignBusy ? 'Assigning...' : 'Assign Batch'}</button></div>
+            <div className="form-field full"><button>Assign Batch</button></div>
             <div className="form-field full"><button type="button" className="ghost" onClick={unassignPendingForStaff}>Unassign Pending for Staff</button></div>
             <p className="note full" style={{ marginTop: 0 }}>Unassignment protects patients who already have call, booking or follow-up history.</p>
           </form>
@@ -243,7 +229,7 @@ export default function CallingPage() {
           <div className="form-field"><label>Next action</label><input value={call.nextAction} onChange={e => setCall({ ...call, nextAction: e.target.value })} /></div>
           <div className="form-field"><label>Next action date</label><input type="date" value={call.nextActionDate} onChange={e => setCall({ ...call, nextActionDate: e.target.value })} /></div>
           <div className="form-field full"><label>Notes</label><textarea value={call.notes} onChange={e => setCall({ ...call, notes: e.target.value })} /></div>
-          <div className="form-field"><button disabled={saveBusy}>{saveBusy ? 'Saving...' : (editingCall ? 'Save Changes' : 'Save Call')}</button></div>
+          <div className="form-field"><button>{editingCall ? 'Save Changes' : 'Save Call'}</button></div>
           <div className="form-field"><button type="button" className="ghost" onClick={() => { setEditingCall(null); setCall(blankCall); }}>Clear Form</button></div>
           <div className="form-field full"><button type="button" className="ghost" onClick={() => { setSelected(null); setEditingCall(null); setPatientCalls([]); setCall(blankCall); }}>Close</button></div>
         </form>

@@ -22,10 +22,6 @@ export default function SettingsPage() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
-  const [createBusy, setCreateBusy] = useState(false);
-  const [editBusy, setEditBusy] = useState(false);
-  const [resetBusy, setResetBusy] = useState(false);
-  const [deleteBusyId, setDeleteBusyId] = useState('');
 
   const canAdmin = useMemo(() => me?.role === 'admin', [me]);
   const canManage = useMemo(() => ['admin','manager'].includes(me?.role), [me]);
@@ -49,25 +45,15 @@ export default function SettingsPage() {
   useEffect(() => { load(); }, []);
 
   async function createUser(e: React.FormEvent) {
-    e.preventDefault();
-    if (createBusy) return;
-    setMessage(''); setError('');
-    const email = form.email.trim().toLowerCase();
-    if (users.some(u => String(u.email || '').toLowerCase() === email)) {
-      setError('A user with this email already exists. Edit the existing user instead of creating a duplicate.');
-      return;
-    }
-    setCreateBusy(true);
+    e.preventDefault(); setMessage(''); setError('');
     try {
-      const res = await fetch('/api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...form, email }) });
-      const data = await parseJsonResponse(res);
-      setUsers(prev => [...prev.filter(u => u.id !== data.user.id), data.user].sort((a,b) => String(a.name).localeCompare(String(b.name))));
-      setMessage(`User created: ${data.user.name}. Give the staff member the temporary password and ask them to change it under Account after first login.`);
+      const res = await fetch('/api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
+      await parseJsonResponse(res);
+      setMessage('User created. Give the staff member the temporary password and ask them to change it under Account after first login.');
       setForm(blankCreate);
+      load();
     } catch (error: any) {
       setError(error.message || 'Failed to create user');
-    } finally {
-      setCreateBusy(false);
     }
   }
 
@@ -80,8 +66,7 @@ export default function SettingsPage() {
 
   async function saveEdit(e: React.FormEvent) {
     e.preventDefault(); setMessage(''); setError('');
-    if (!editUser || editBusy) return;
-    setEditBusy(true);
+    if (!editUser) return;
     try {
       const res = await fetch(`/api/users/${editUser.id}`, {
         method: 'PATCH',
@@ -89,13 +74,11 @@ export default function SettingsPage() {
         body: JSON.stringify(editForm)
       });
       const data = await parseJsonResponse(res);
-      setUsers(prev => prev.map(u => u.id === data.user.id ? data.user : u));
       setMessage(`Updated ${data.user.name}. If the email changed, they should log in using the corrected email address.`);
       setEditUser(null);
+      load();
     } catch (error: any) {
       setError(error.message || 'Failed to update user');
-    } finally {
-      setEditBusy(false);
     }
   }
 
@@ -108,10 +91,9 @@ export default function SettingsPage() {
 
   async function resetStaffPassword(e: React.FormEvent) {
     e.preventDefault(); setMessage(''); setError('');
-    if (!resetUser || resetBusy) return;
+    if (!resetUser) return;
     if (resetPassword.length < 8) { setError('Temporary password must be at least 8 characters.'); return; }
     if (!confirm(`Reset password for ${resetUser.name}? They will need to use the new temporary password to log in.`)) return;
-    setResetBusy(true);
     try {
       const res = await fetch(`/api/users/${resetUser.id}`, {
         method: 'PATCH',
@@ -122,29 +104,9 @@ export default function SettingsPage() {
       setMessage(`Password reset for ${resetUser.name}. Give them the temporary password and ask them to change it under Account.`);
       setResetUser(null);
       setResetPassword('ChangeMe123!');
+      load();
     } catch (error: any) {
       setError(error.message || 'Failed to reset password');
-    } finally {
-      setResetBusy(false);
-    }
-  }
-
-  async function deleteUser(user: any) {
-    setMessage(''); setError('');
-    if (deleteBusyId) return;
-    if (user.id === me?.id) { setError('You cannot delete your own account while signed in.'); return; }
-    const typed = prompt(`Type DELETE to permanently remove ${user.name}. Pending assignments under this account will be returned to unassigned.`);
-    if (typed !== 'DELETE') return;
-    setDeleteBusyId(user.id);
-    try {
-      const res = await fetch(`/api/users/${user.id}`, { method: 'DELETE' });
-      const data = await parseJsonResponse(res);
-      setUsers(prev => prev.filter(u => u.id !== user.id));
-      setMessage(`Deleted ${data.user.name}. ${data.unassignedPatients || 0} assigned patient(s) were returned to unassigned.`);
-    } catch (error: any) {
-      setError(error.message || 'Failed to delete user');
-    } finally {
-      setDeleteBusyId('');
     }
   }
 
@@ -190,7 +152,7 @@ export default function SettingsPage() {
             <div className="form-field"><label>Email</label><input value={form.email} onChange={e => setForm({...form, email:e.target.value})} type="email" required /></div>
             <div className="form-field"><label>Role</label><select value={form.role} onChange={e => setForm({...form, role:e.target.value})}><option value="admin">Admin</option><option value="manager">Manager</option><option value="recall_staff">Recall Staff</option><option value="verifier">Verifier</option><option value="finance">Finance</option><option value="viewer">Viewer</option></select></div>
             <div className="form-field"><label>Temporary password</label><PasswordField value={form.password} onChange={value => setForm({...form, password:value})} minLength={8} autoComplete="new-password" /></div>
-            <div className="form-field full"><button disabled={createBusy}>{createBusy ? 'Creating user...' : 'Create User'}</button></div>
+            <div className="form-field full"><button>Create User</button></div>
           </form>
         </div>}
 
@@ -211,7 +173,6 @@ export default function SettingsPage() {
                 {canAdmin && <div className="user-actions">
                   <button type="button" className="secondary small" onClick={() => openEdit(u)}>Edit</button>
                   <button type="button" className="ghost small" onClick={() => openReset(u)}>Reset Password</button>
-                  <button type="button" className="danger small" disabled={deleteBusyId === u.id || u.id === me?.id} onClick={() => deleteUser(u)}>{deleteBusyId === u.id ? 'Deleting...' : 'Delete'}</button>
                 </div>}
               </div>
             ))}
@@ -225,7 +186,7 @@ export default function SettingsPage() {
             <div className="form-field"><label>Email</label><input type="email" value={editForm.email} onChange={e => setEditForm({ ...editForm, email: e.target.value })} required /></div>
             <div className="form-field"><label>Role</label><select value={editForm.role} onChange={e => setEditForm({ ...editForm, role: e.target.value })}><option value="admin">Admin</option><option value="manager">Manager</option><option value="recall_staff">Recall Staff</option><option value="verifier">Verifier</option><option value="finance">Finance</option><option value="viewer">Viewer</option></select></div>
             <div className="form-field"><label>Active</label><select value={String(editForm.is_active)} onChange={e => setEditForm({ ...editForm, is_active: e.target.value === 'true' })}><option value="true">Active</option><option value="false">Deactivated</option></select></div>
-            <div className="form-field full button-row"><button type="submit" disabled={editBusy}>{editBusy ? 'Saving...' : 'Save Changes'}</button><button type="button" className="secondary" onClick={() => setEditUser(null)}>Cancel</button></div>
+            <div className="form-field full button-row"><button type="submit">Save Changes</button><button type="button" className="secondary" onClick={() => setEditUser(null)}>Cancel</button></div>
           </form>
         </div>}
 
@@ -234,7 +195,7 @@ export default function SettingsPage() {
           <p className="note">This does not require the staff member's old password. Give them the temporary password and ask them to change it under Account after login.</p>
           <form onSubmit={resetStaffPassword} className="form-grid">
             <div className="form-field"><label>New temporary password</label><PasswordField value={resetPassword} onChange={setResetPassword} minLength={8} required autoComplete="new-password" /></div>
-            <div className="form-field button-row" style={{ alignSelf: 'end' }}><button type="submit" disabled={resetBusy}>{resetBusy ? 'Resetting...' : 'Reset Password'}</button><button type="button" className="secondary" onClick={() => setResetUser(null)}>Cancel</button></div>
+            <div className="form-field button-row" style={{ alignSelf: 'end' }}><button type="submit">Reset Password</button><button type="button" className="secondary" onClick={() => setResetUser(null)}>Cancel</button></div>
           </form>
         </div>}
 

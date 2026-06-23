@@ -41,8 +41,8 @@ const globalCache = globalThis as typeof globalThis & { __FHDC_RECALLDESK_STORE_
 if (!globalCache.__FHDC_RECALLDESK_STORE_CACHE__) globalCache.__FHDC_RECALLDESK_STORE_CACHE__ = null;
 
 function cacheTtlMs() {
-  const configured = Number(process.env.APP_STORE_CACHE_TTL_MS || 5000);
-  return Number.isFinite(configured) && configured >= 0 ? configured : 5000;
+  const configured = Number(process.env.APP_STORE_CACHE_TTL_MS || 120000);
+  return Number.isFinite(configured) && configured >= 0 ? configured : 120000;
 }
 
 function getCachedStore(): Store | null {
@@ -162,11 +162,10 @@ function useSupabaseStorage() {
   return Boolean(supabaseAdmin && process.env.STORAGE_DRIVER !== 'local');
 }
 
-async function readSupabaseStore(options?: { fresh?: boolean }): Promise<Store> {
+async function readSupabaseStore(): Promise<Store> {
   if (!supabaseAdmin) throw new Error('Supabase is not configured. Check SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.');
 
-  if (options?.fresh) clearStoreCache();
-  const cached = options?.fresh ? null : getCachedStore();
+  const cached = getCachedStore();
   if (cached) return cached;
 
   const { data, error } = await supabaseAdmin
@@ -214,8 +213,8 @@ async function writeSupabaseStore(store: Store) {
   setCachedStore(dataToSave);
 }
 
-export async function readStore(options?: { fresh?: boolean }): Promise<Store> {
-  if (useSupabaseStorage()) return readSupabaseStore(options);
+export async function readStore(): Promise<Store> {
+  if (useSupabaseStorage()) return readSupabaseStore();
 
   const local = await readLocalFileStore();
   if (local) return local;
@@ -237,9 +236,7 @@ export async function writeStore(store: Store) {
 }
 
 export async function updateStore<T>(fn: (store: Store) => T | Promise<T>): Promise<T> {
-  // Writes must always start from the newest Supabase state.
-  // A cached read here can make staff see assignments disappear or fail with "assign first" after admin has assigned work.
-  const store = await readStore({ fresh: true });
+  const store = await readStore();
   const result = await fn(store);
   await writeStore(store);
   return result;
