@@ -39,6 +39,7 @@ export default function CallingPage() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [assigning, setAssigning] = useState(false);
   const [assign, setAssign] = useState<{ staffId: string; staffIds: string[]; count: number; method: 'balanced_round_robin' | 'sequential_block' }>({ staffId: '', staffIds: [], count: 100, method: 'balanced_round_robin' });
   const [call, setCall] = useState(blankCall);
   const [monitor, setMonitor] = useState<any>(null);
@@ -113,6 +114,13 @@ export default function CallingPage() {
     load('', viewMode);
   }
 
+
+  function updateAssignmentCount(rawValue: string) {
+    const digitsOnly = rawValue.replace(/\D/g, '');
+    const normalized = digitsOnly.replace(/^0+(?=\d)/, '');
+    setAssign(current => ({ ...current, count: normalized ? Number(normalized) : 0 }));
+  }
+
   function toggleAssignmentStaff(staffId: string) {
     setAssign(current => {
       const exists = current.staffIds.includes(staffId);
@@ -124,8 +132,19 @@ export default function CallingPage() {
   }
 
   async function assignBatch(e: React.FormEvent) {
-    e.preventDefault(); setMessage(''); setError('');
+    e.preventDefault();
+    if (assigning) return;
+
+    setMessage('');
+    setError('');
+
+    const count = Number(assign.count || 0);
+
     try {
+      if (!count || count < 1) {
+        setError('Enter the total number of patients to distribute.');
+        return;
+      }
       if (assign.method === 'balanced_round_robin' && assign.staffIds.length < 2) {
         setError('Balanced round-robin needs at least two selected recall staff.');
         return;
@@ -134,11 +153,15 @@ export default function CallingPage() {
         setError('Select one staff member for sequential block assignment.');
         return;
       }
+
+      setAssigning(true);
+      setMessage(assign.method === 'balanced_round_robin' ? 'Assigning balanced batch...' : 'Assigning batch...');
+
       const payload = {
         method: assign.method,
         staffId: assign.staffId,
         staffIds: assign.staffIds,
-        count: assign.count
+        count
       };
       const res = await fetch('/api/patients/assign', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       const data = await parseJsonResponse(res);
@@ -149,6 +172,8 @@ export default function CallingPage() {
       setStatus('active_queue'); setViewMode('queue'); await load('', 'queue');
     } catch (error: any) {
       setError(error.message || 'Assignment failed');
+    } finally {
+      setAssigning(false);
     }
   }
 
@@ -310,12 +335,16 @@ export default function CallingPage() {
 
             {assign.method === 'balanced_round_robin' && <div className="form-field full">
               <label>Select recall staff for balanced distribution</label>
-              <div style={{ display: 'grid', gap: 8 }}>
-                {assignmentStaffOptions.map(u => <label key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 10, fontWeight: 700 }}>
-                  <input type="checkbox" checked={assign.staffIds.includes(u.id)} onChange={() => toggleAssignmentStaff(u.id)} />
-                  <span>{u.name}</span>
-                </label>)}
+              <div className="assignment-staff-grid">
+                {assignmentStaffOptions.map(u => {
+                  const checked = assign.staffIds.includes(u.id);
+                  return <label key={u.id} className={`assignment-staff-option ${checked ? 'selected' : ''}`}>
+                    <input type="checkbox" checked={checked} onChange={() => toggleAssignmentStaff(u.id)} />
+                    <span>{u.name}</span>
+                  </label>;
+                })}
               </div>
+              <p className="note" style={{ marginTop: 8 }}>{assign.staffIds.length} staff selected. Select at least 2 for balanced round-robin.</p>
             </div>}
 
             {assign.method === 'sequential_block' && <div className="form-field full">
@@ -325,8 +354,19 @@ export default function CallingPage() {
               </select>
             </div>}
 
-            <div className="form-field full"><label>{assign.method === 'balanced_round_robin' ? 'Total patients to distribute' : 'Number of patients'}</label><input type="number" min="1" value={assign.count} onChange={e => setAssign({ ...assign, count: Number(e.target.value) })} /></div>
-            <div className="form-field full"><button>{assign.method === 'balanced_round_robin' ? 'Assign Balanced Batch' : 'Assign Batch'}</button></div>
+            <div className="form-field full">
+              <label>{assign.method === 'balanced_round_robin' ? 'Total patients to distribute' : 'Number of patients'}</label>
+              <input
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                value={assign.count ? String(assign.count) : ''}
+                onFocus={e => e.currentTarget.select()}
+                onChange={e => updateAssignmentCount(e.target.value)}
+                placeholder="Enter number, e.g. 100"
+              />
+            </div>
+            <div className="form-field full"><button disabled={assigning}>{assigning ? 'Assigning...' : assign.method === 'balanced_round_robin' ? 'Assign Balanced Batch' : 'Assign Batch'}</button></div>
 
             <div className="form-field full"><label>Staff for unassignment cleanup</label><select value={assign.staffId} onChange={e => setAssign({ ...assign, staffId: e.target.value })}><option value="">Select staff</option>{assignmentStaffOptions.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
             <div className="form-field full"><button type="button" className="ghost" onClick={unassignPendingForStaff}>Unassign Pending for Staff</button></div>

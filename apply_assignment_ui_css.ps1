@@ -1,12 +1,8 @@
-FHDC RecallDesk Assignment UI Feedback Patch
+$cssPath = "app\globals.css"
+$marker = "/* Assignment UI polish */"
+$css = @'
 
-This patch improves the balanced assignment interface:
-- Cleaner selectable staff cards.
-- Assign button shows "Assigning..." and blocks repeat clicks.
-- Total patients field is easier to edit and strips leading zeroes, so 010 becomes 10.
-
-After extracting, append the CSS below to app/globals.css if it is not already present:
-
+/* Assignment UI polish */
 .assignment-staff-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
@@ -42,4 +38,17 @@ After extracting, append the CSS below to app/globals.css if it is not already p
 button:disabled {
   opacity: 0.7;
   cursor: wait;
+}
+'@
+
+if (!(Test-Path $cssPath)) {
+  throw "Cannot find $cssPath. Run this from the fhdc-recalldesk project root."
+}
+
+$content = Get-Content $cssPath -Raw
+if ($content -notlike "*$marker*") {
+  Add-Content -Path $cssPath -Value $css
+  Write-Host "Assignment UI CSS appended to app\globals.css"
+} else {
+  Write-Host "Assignment UI CSS already present. No change made."
 }
