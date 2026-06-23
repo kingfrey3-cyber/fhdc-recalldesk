@@ -1,21 +1,35 @@
-'use client';
+"use client";
+
+import { useState } from "react";
 
 export default function LogoutButton() {
-  function logout() {
-    try {
-      window.sessionStorage.clear();
-      window.localStorage.removeItem('fhdc_recalldesk_user');
-      document.cookie = 'fhdc_recalldesk_session=; Max-Age=0; path=/; SameSite=Lax';
-      document.cookie = 'fhdc_recalldesk_session=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/';
-    } catch {}
+  const [loggingOut, setLoggingOut] = useState(false);
 
-    // Use a hard browser navigation. Do not wait for Supabase or client state.
-    window.location.href = `/api/auth/logout?ts=${Date.now()}`;
+  async function logout() {
+    if (loggingOut) return;
+
+    setLoggingOut(true);
+
+    try {
+      await fetch("/api/logout", {
+        method: "POST",
+        cache: "no-store",
+      });
+    } catch {
+      // Even if the API call fails, still force the browser out of the session view.
+    } finally {
+      window.location.replace(`/login?loggedOut=1&t=${Date.now()}`);
+    }
   }
 
   return (
-    <button type="button" onClick={logout} className="logout-button">
-      Logout
+    <button
+      type="button"
+      onClick={logout}
+      disabled={loggingOut}
+      className="logout-button"
+    >
+      {loggingOut ? "Logging out..." : "Logout"}
     </button>
   );
 }
