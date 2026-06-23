@@ -39,7 +39,7 @@ export default function CallingPage() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [assign, setAssign] = useState({ staffId: '', count: 100 });
+  const [assign, setAssign] = useState<{ staffId: string; staffIds: string[]; count: number; method: 'balanced_round_robin' | 'sequential_block' }>({ staffId: '', staffIds: [], count: 100, method: 'balanced_round_robin' });
   const [call, setCall] = useState(blankCall);
   const [monitor, setMonitor] = useState<any>(null);
   const [monitorDates, setMonitorDates] = useState({ startDate: thirtyDaysAgoIso(), endDate: todayIso() });
@@ -47,6 +47,7 @@ export default function CallingPage() {
   const canManage = useMemo(() => ['admin','manager'].includes(me?.role), [me]);
   const canMonitor = useMemo(() => ['admin','manager','finance'].includes(me?.role), [me]);
   const maxDailyCalls = useMemo(() => Math.max(1, ...(monitor?.dailyTotals || []).map((d: any) => Number(d.calls || 0))), [monitor]);
+  const assignmentStaffOptions = useMemo(() => users.filter(u => ['recall_staff','manager'].includes(u.role) && u.is_active !== false), [users]);
 
   function statusForMode(mode = viewMode) {
     if (mode === 'called') return ['logged', 'called', 'follow_up', 'booked', 'do_not_call'].includes(status) ? status : 'logged';
@@ -112,12 +113,40 @@ export default function CallingPage() {
     load('', viewMode);
   }
 
+  function toggleAssignmentStaff(staffId: string) {
+    setAssign(current => {
+      const exists = current.staffIds.includes(staffId);
+      return {
+        ...current,
+        staffIds: exists ? current.staffIds.filter(id => id !== staffId) : [...current.staffIds, staffId]
+      };
+    });
+  }
+
   async function assignBatch(e: React.FormEvent) {
     e.preventDefault(); setMessage(''); setError('');
     try {
-      const res = await fetch('/api/patients/assign', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(assign) });
+      if (assign.method === 'balanced_round_robin' && assign.staffIds.length < 2) {
+        setError('Balanced round-robin needs at least two selected recall staff.');
+        return;
+      }
+      if (assign.method === 'sequential_block' && !assign.staffId) {
+        setError('Select one staff member for sequential block assignment.');
+        return;
+      }
+      const payload = {
+        method: assign.method,
+        staffId: assign.staffId,
+        staffIds: assign.staffIds,
+        count: assign.count
+      };
+      const res = await fetch('/api/patients/assign', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       const data = await parseJsonResponse(res);
-      setMessage(`${data.assigned} patients assigned. Refreshing assignment view...`); setStatus('active_queue'); setViewMode('queue'); await load('', 'queue');
+      const detail = Array.isArray(data.byStaff) && data.byStaff.length
+        ? ` (${data.byStaff.map((x: any) => `${x.staff_name || x.staffId}: ${x.assigned}`).join(', ')})`
+        : '';
+      setMessage(`${data.assigned} patients assigned${detail}. Refreshing assignment view...`);
+      setStatus('active_queue'); setViewMode('queue'); await load('', 'queue');
     } catch (error: any) {
       setError(error.message || 'Assignment failed');
     }
@@ -268,9 +297,38 @@ export default function CallingPage() {
         {canManage && viewMode === 'queue' && <div className="card third">
           <h3>Assign Oldest Unassigned Patients</h3>
           <form onSubmit={assignBatch} className="form-grid">
-            <div className="form-field full"><label>Recall staff</label><select value={assign.staffId} onChange={e => setAssign({ ...assign, staffId: e.target.value })}><option value="">Select staff</option>{users.filter(u => ['recall_staff','manager'].includes(u.role)).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
-            <div className="form-field full"><label>Number of patients</label><input type="number" min="1" value={assign.count} onChange={e => setAssign({ ...assign, count: Number(e.target.value) })} /></div>
-            <div className="form-field full"><button>Assign Batch</button></div>
+            <div className="form-field full">
+              <label>Assignment method</label>
+              <select value={assign.method} onChange={e => setAssign({ ...assign, method: e.target.value as any })}>
+                <option value="balanced_round_robin">Balanced round-robin — recommended</option>
+                <option value="sequential_block">Sequential block assignment</option>
+              </select>
+              <p className="note" style={{ marginTop: 8 }}>
+                Balanced round-robin sorts by oldest last visit first, then alternates patients between selected staff so recall batches are comparable.
+              </p>
+            </div>
+
+            {assign.method === 'balanced_round_robin' && <div className="form-field full">
+              <label>Select recall staff for balanced distribution</label>
+              <div style={{ display: 'grid', gap: 8 }}>
+                {assignmentStaffOptions.map(u => <label key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 10, fontWeight: 700 }}>
+                  <input type="checkbox" checked={assign.staffIds.includes(u.id)} onChange={() => toggleAssignmentStaff(u.id)} />
+                  <span>{u.name}</span>
+                </label>)}
+              </div>
+            </div>}
+
+            {assign.method === 'sequential_block' && <div className="form-field full">
+              <label>Recall staff</label>
+              <select value={assign.staffId} onChange={e => setAssign({ ...assign, staffId: e.target.value })}>
+                <option value="">Select staff</option>{assignmentStaffOptions.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </select>
+            </div>}
+
+            <div className="form-field full"><label>{assign.method === 'balanced_round_robin' ? 'Total patients to distribute' : 'Number of patients'}</label><input type="number" min="1" value={assign.count} onChange={e => setAssign({ ...assign, count: Number(e.target.value) })} /></div>
+            <div className="form-field full"><button>{assign.method === 'balanced_round_robin' ? 'Assign Balanced Batch' : 'Assign Batch'}</button></div>
+
+            <div className="form-field full"><label>Staff for unassignment cleanup</label><select value={assign.staffId} onChange={e => setAssign({ ...assign, staffId: e.target.value })}><option value="">Select staff</option>{assignmentStaffOptions.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
             <div className="form-field full"><button type="button" className="ghost" onClick={unassignPendingForStaff}>Unassign Pending for Staff</button></div>
             <p className="note full" style={{ marginTop: 0 }}>Unassignment protects patients who already have call, booking or follow-up history.</p>
           </form>

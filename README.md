@@ -1,35 +1,13 @@
-# FHDC RecallDesk Date / Doctor / Queue Rebuild Patch
+FHDC RecallDesk Balanced Round-Robin Assignment Patch
 
-This patch replaces `lib/recallLogic.ts` with a stronger parser for FHDC exports.
+Adds assignment options on the Calling List page:
 
-It handles:
-- `2nd Jan 2025`
-- `2 Jan 2025`
-- `02 Jul 2025`
-- Excel date objects
-- Excel serial dates
-- dd/mm/yyyy and yyyy-mm-dd
-- Doctor columns such as `Doctor`, `Clinician`, `Dentist`, `Provider`
-- Category/company columns
+1. Balanced round-robin assignment (recommended/default)
+   - Sorts unassigned active patients by oldest last visit first.
+   - Alternates patients across selected recall staff.
+   - Gives each caller a comparable mix of older and newer recall patients.
 
-After applying the patch, run:
+2. Sequential block assignment
+   - Keeps the previous one-staff batch assignment.
 
-```powershell
-Remove-Item -Recurse -Force .next -ErrorAction SilentlyContinue
-npm.cmd run build
-npm.cmd run dev:3001
-```
-
-Then run the SQL file in Supabase:
-
-```text
-supabase/reset_upload_derived_tables_for_date_rebuild.sql
-```
-
-Then re-upload the original visit exports in batches.
-
-The patient queue should then show:
-- Last Visit
-- Last Doctor
-- Oldest last visit first
-- Missing dates last, not first
+Apply, build locally, test assignment with a small number first, then commit and redeploy.

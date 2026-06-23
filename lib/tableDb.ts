@@ -312,6 +312,61 @@ export async function assignPatients(staffId: string, patientIds: string[] = [],
   return total;
 }
 
+
+export async function assignPatientsRoundRobin(staffIdsInput: string[] = [], count = 0) {
+  const staffIds = Array.from(new Set((staffIdsInput || []).filter(Boolean)));
+  if (staffIds.length < 2) throw new Error('Balanced round-robin needs at least two selected recall staff.');
+  if (!count || count < 1) throw new Error('Enter the total number of patients to distribute.');
+
+  const staffRows: any[] = [];
+  for (const staffId of staffIds) {
+    const staff = await getUserById(staffId);
+    if (!staff || !staff.is_active) throw new Error(`Selected staff user is not active: ${staffId}`);
+    staffRows.push(staff);
+  }
+
+  const { data, error } = await db()
+    .from('clean_patients')
+    .select('id,last_visit_date,display_name')
+    .eq('assignment_status', 'unassigned')
+    .eq('do_not_call', false)
+    .order('last_visit_date', { ascending: true, nullsFirst: false })
+    .order('display_name', { ascending: true })
+    .limit(count);
+
+  if (error) throw new Error(`Balanced assignment selection failed: ${error.message}`);
+  const patients = data || [];
+  if (!patients.length) return { total: 0, byStaff: [] };
+
+  const assignments = new Map<string, string[]>();
+  for (const staffId of staffIds) assignments.set(staffId, []);
+
+  patients.forEach((patient: any, index: number) => {
+    const staffId = staffIds[index % staffIds.length];
+    assignments.get(staffId)!.push(patient.id);
+  });
+
+  const byStaff: any[] = [];
+  let total = 0;
+
+  for (const staff of staffRows) {
+    const ids = assignments.get(staff.id) || [];
+    let assigned = 0;
+    for (const chunk of chunkArray(ids, 500)) {
+      const { count: n, error: updateError } = await db()
+        .from('clean_patients')
+        .update({ assigned_to: staff.id, assignment_status: 'assigned', updated_at: nowIso() }, { count: 'exact' })
+        .in('id', chunk);
+      if (updateError) throw new Error(`Balanced assignment failed for ${staff.name || staff.email}: ${updateError.message}`);
+      assigned += n || 0;
+    }
+    total += assigned;
+    byStaff.push({ staffId: staff.id, staff_name: staff.name || staff.email, assigned });
+  }
+
+  return { total, byStaff };
+}
+
 export async function unassignPatients(patientIds: string[] = [], staffId = '') {
   if (!patientIds.length && !staffId) throw new Error('Select a patient or staff member to unassign.');
   let targets: any[] = [];
