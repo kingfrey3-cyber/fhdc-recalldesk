@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireUser } from '@/lib/auth';
-import { readStore, updateStore, newId, nowIso, publicUser } from '@/lib/localDb';
+import { readStore, updateStore, newId, nowIso, publicUser, clearStoreCache } from '@/lib/localDb';
 import { writeAudit } from '@/lib/audit';
 
 const reachedOutcomes = new Set(['Booked appointment','Interested but not booked','Call back later','Patient declined','Already visited recently']);
@@ -28,7 +28,7 @@ function latestCallForPatient(store: StoreAny, patientId: string) {
     .sort((a: any, b: any) => String(b.attempt_at || b.created_at || '').localeCompare(String(a.attempt_at || a.created_at || '')))[0] || null;
 }
 
-function recomputePatientStatus(store: StoreAny, patientId: string) {
+export function recomputePatientStatus(store: StoreAny, patientId: string) {
   const patient = store.patient_master.find((p: any) => p.id === patientId);
   if (!patient) return;
   const latest = latestCallForPatient(store, patientId);
@@ -66,8 +66,10 @@ export async function GET(req: Request) {
     const patientId = (url.searchParams.get('patientId') || '').trim();
     const staffId = (url.searchParams.get('staffId') || '').trim();
     const limit = Math.min(Number(url.searchParams.get('limit') || 100), 500);
+    const fresh = url.searchParams.get('fresh') === '1';
+    if (fresh) clearStoreCache();
 
-    const store = await readStore();
+    const store = await readStore({ fresh });
     const usersById = new Map(store.app_users.map((u: any) => [u.id, publicUser(u)]));
     const patientsById = new Map(store.patient_master.map((p: any) => [p.id, p]));
 
@@ -85,14 +87,14 @@ export async function GET(req: Request) {
 
     const calls = rows.slice(0, limit).map((c: any) => ({
       ...c,
-      staff: usersById.get(c.staff_id) || null,
+      staff: usersById.get(c.staff_id) || (c.staff_name_snapshot ? { id: c.staff_id, name: c.staff_name_snapshot, email: c.staff_email_snapshot || '', role: 'deleted', is_active: false } : null),
       patient: patientsById.get(c.patient_id) || null,
       booking: store.bookings.find((b: any) => b.call_attempt_id === c.id) || null
     }));
 
     return NextResponse.json({ calls });
   } catch (error: any) {
-    const status = error.message === 'UNAUTHENTICATED' ? 401 : error.message === 'FORBIDDEN' ? 403 : 500;
+    const status = error.message === 'UNAUTHENTICATED' ? 401 : error.message === 'FORBIDDEN' ? 403 : String(error.message || '').includes('assigned') || String(error.message || '').includes('assign') ? 409 : 500;
     return NextResponse.json({ error: error.message || 'Failed to load calls' }, { status });
   }
 }
@@ -170,7 +172,7 @@ export async function POST(req: Request) {
     await writeAudit(user.id, 'LOG_CALL_ATTEMPT', 'call_attempt', call.id, { patientId: body.patientId, outcome: body.outcome });
     return NextResponse.json({ call });
   } catch (error: any) {
-    const status = error.message === 'UNAUTHENTICATED' ? 401 : error.message === 'FORBIDDEN' ? 403 : 500;
+    const status = error.message === 'UNAUTHENTICATED' ? 401 : error.message === 'FORBIDDEN' ? 403 : String(error.message || '').includes('assigned') || String(error.message || '').includes('assign') ? 409 : 500;
     return NextResponse.json({ error: error.message || 'Failed to save call' }, { status });
   }
 }
