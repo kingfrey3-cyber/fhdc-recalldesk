@@ -17,8 +17,10 @@ export async function GET(req: Request) {
     const url = new URL(req.url);
     const patientId = (url.searchParams.get('patientId') || '').trim();
     const staffId = (url.searchParams.get('staffId') || '').trim();
-    const limit = Math.min(Number(url.searchParams.get('limit') || 100), 500);
-    if (useTableStorage()) return NextResponse.json({ calls: await listCalls(user, { patientId, staffId, limit }) });
+    const limit = Math.min(Number(url.searchParams.get('limit') || 100), 2000);
+    const startDate = (url.searchParams.get('startDate') || '').trim();
+    const endDate = (url.searchParams.get('endDate') || '').trim();
+    if (useTableStorage()) return NextResponse.json({ calls: await listCalls(user, { patientId, staffId, limit, startDate, endDate }) });
     const store = await readStoreFresh();
     const usersById = new Map(store.app_users.map((u: any) => [u.id, publicUser(u)]));
     const patientsById = new Map(store.patient_master.map((p: any) => [p.id, p]));

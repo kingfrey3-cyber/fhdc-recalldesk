@@ -193,18 +193,50 @@ export async function getDashboard(session: { id: string; role: AppRole }) {
 export async function listPatients(params: { user: { id: string; role: AppRole }; search?: string; status?: string; staffId?: string; mine?: boolean; limit?: number }) {
   const { user } = params;
   const limit = Math.min(Number(params.limit || 250), 1000);
-  let q = db().from('clean_patients').select('*').order('last_visit_date', { ascending: true, nullsFirst: false }).limit(limit);
+  const search = cleanString(params.search).toLowerCase();
+  const staffScope = user.role === 'recall_staff' ? user.id : (params.staffId || (params.mine ? user.id : ''));
+
+  let q = db().from('clean_patients').select('*').order('last_visit_date', { ascending: true, nullsFirst: false }).order('display_name', { ascending: true }).limit(limit);
+
+  if (params.status === 'logged') {
+    // Logged view must be based on the call_attempts table, not only assignment_status.
+    // This prevents called patients from being "lost" if status recalculation/caching lags.
+    let callQ = db().from('call_attempts').select('patient_id,attempt_at,staff_id').order('attempt_at', { ascending: false }).limit(5000);
+    if (staffScope) callQ = callQ.eq('staff_id', staffScope);
+    const { data: callRows, error: callErr } = await callQ;
+    if (callErr) throw new Error(`Logged patient selection failed: ${callErr.message}`);
+    const loggedIds = Array.from(new Set((callRows || []).map((c: any) => c.patient_id).filter(Boolean)));
+    if (!loggedIds.length) return [];
+
+    let patients: any[] = [];
+    for (const chunk of chunkArray(loggedIds, 500)) {
+      let patientQ = db().from('clean_patients').select('*').in('id', chunk);
+      if (search) patientQ = patientQ.or(`display_name.ilike.%${search}%,standard_phone.ilike.%${search}%,original_phones_text.ilike.%${search}%`);
+      const { data, error } = await patientQ;
+      if (error) throw new Error(`Logged patients load failed: ${error.message}`);
+      patients.push(...(data || []));
+    }
+    patients = patients.sort((a: any, b: any) => String(a.last_visit_date || '9999-12-31').localeCompare(String(b.last_visit_date || '9999-12-31')) || String(a.display_name || '').localeCompare(String(b.display_name || ''))).slice(0, limit);
+    return attachPatientContext(patients);
+  }
+
   if (user.role === 'recall_staff') q = q.eq('assigned_to', user.id);
   else {
     if (params.mine) q = q.eq('assigned_to', user.id);
     if (params.staffId) q = q.eq('assigned_to', params.staffId);
   }
-  if (params.status) q = q.eq('assignment_status', params.status);
-  const search = cleanString(params.search).toLowerCase();
+  if (params.status === 'active_queue') {
+    if (user.role === 'recall_staff') q = q.eq('assignment_status', 'assigned');
+    else q = q.in('assignment_status', ['unassigned', 'assigned']);
+    q = q.eq('do_not_call', false);
+  } else if (params.status) q = q.eq('assignment_status', params.status);
   if (search) q = q.or(`display_name.ilike.%${search}%,standard_phone.ilike.%${search}%,original_phones_text.ilike.%${search}%`);
   const { data, error } = await q;
   if (error) throw new Error(`Patients load failed: ${error.message}`);
-  const patients = data || [];
+  return attachPatientContext(data || []);
+}
+
+async function attachPatientContext(patients: any[]) {
   const staffIds = Array.from(new Set(patients.map((p: any) => p.assigned_to).filter(Boolean)));
   const usersById = new Map<string, any>();
   for (const chunk of chunkArray(staffIds, 500)) {
@@ -214,12 +246,50 @@ export async function listPatients(params: { user: { id: string; role: AppRole }
   }
   const ids = patients.map((p: any) => p.id);
   const callCountByPatient = new Map<string, number>();
+  const latestCallByPatient = new Map<string, any>();
+  const callerIds = new Set<string>();
   for (const chunk of chunkArray(ids, 500)) {
-    const { data: calls, error: callErr } = await db().from('call_attempts').select('patient_id').in('patient_id', chunk);
+    const { data: calls, error: callErr } = await db().from('call_attempts').select('*').in('patient_id', chunk).order('attempt_at', { ascending: false });
     if (callErr) throw new Error(`Call count load failed: ${callErr.message}`);
-    for (const c of calls || []) callCountByPatient.set(c.patient_id, (callCountByPatient.get(c.patient_id) || 0) + 1);
+    for (const c of calls || []) {
+      callCountByPatient.set(c.patient_id, (callCountByPatient.get(c.patient_id) || 0) + 1);
+      if (!latestCallByPatient.has(c.patient_id)) latestCallByPatient.set(c.patient_id, c);
+      if (c.staff_id) callerIds.add(c.staff_id);
+    }
   }
-  return patients.map((p: any) => ({ ...p, original_phones: jsonArray(p.original_phones), all_names: jsonArray(p.all_names), years_visited: jsonArray(p.years_visited), patient_name_keys: jsonArray(p.patient_name_keys), assigned_user: p.assigned_to ? usersById.get(p.assigned_to) || null : null, call_count: callCountByPatient.get(p.id) || 0 }));
+  const callersById = new Map<string, any>();
+  for (const chunk of chunkArray(Array.from(callerIds), 500)) {
+    const { data: callers, error: callerErr } = await db().from('app_users').select('id,name,email,role,is_active').in('id', chunk);
+    if (callerErr) throw new Error(`Caller load failed: ${callerErr.message}`);
+    for (const u of callers || []) callersById.set(u.id, u);
+  }
+  return patients.map((p: any) => {
+    const latestCall = latestCallByPatient.get(p.id) || null;
+    return {
+      ...p,
+      original_phones: jsonArray(p.original_phones),
+      all_names: jsonArray(p.all_names),
+      years_visited: jsonArray(p.years_visited),
+      patient_name_keys: jsonArray(p.patient_name_keys),
+      assigned_user: p.assigned_to ? usersById.get(p.assigned_to) || null : null,
+      call_count: callCountByPatient.get(p.id) || 0,
+      latest_call: latestCall ? { ...latestCall, staff: latestCall.staff_id ? callersById.get(latestCall.staff_id) || null : null } : null
+    };
+  });
+}
+
+export async function requeuePatient(user: any, patientId: string) {
+  if (!['admin', 'manager'].includes(user.role)) throw new Error('FORBIDDEN');
+  if (!patientId) throw new Error('Select a patient to requeue.');
+  const patient = await getPatient(patientId);
+  if (!patient) throw new Error('Patient not found');
+  const { data: calls, error: callErr } = await db().from('call_attempts').select('id').eq('patient_id', patientId).limit(1);
+  if (callErr) throw new Error(`Call check failed: ${callErr.message}`);
+  if ((calls || []).length) throw new Error('This patient still has call history. Use Unlog on the specific call first.');
+  const nextStatus = patient.assigned_to ? 'assigned' : 'unassigned';
+  const { data, error } = await db().from('clean_patients').update({ assignment_status: nextStatus, do_not_call: false, updated_at: nowIso() }).eq('id', patientId).select('*').single();
+  if (error) throw new Error(`Requeue failed: ${error.message}`);
+  return data;
 }
 
 export async function assignPatients(staffId: string, patientIds: string[] = [], count = 0) {
@@ -300,10 +370,12 @@ async function recomputePatientStatus(patientId: string) {
   if (updErr) throw new Error(`Patient status update failed: ${updErr.message}`);
 }
 
-export async function listCalls(user: any, opts: { patientId?: string; staffId?: string; limit?: number }) {
-  const limit = Math.min(Number(opts.limit || 100), 500);
+export async function listCalls(user: any, opts: { patientId?: string; staffId?: string; limit?: number; startDate?: string; endDate?: string }) {
+  const limit = Math.min(Number(opts.limit || 100), 2000);
   let q = db().from('call_attempts').select('*').order('attempt_at', { ascending: false }).limit(limit);
   if (opts.patientId) q = q.eq('patient_id', opts.patientId);
+  if (opts.startDate) q = q.gte('attempt_at', `${String(opts.startDate).slice(0, 10)}T00:00:00`);
+  if (opts.endDate) q = q.lte('attempt_at', `${String(opts.endDate).slice(0, 10)}T23:59:59`);
   if (user.role === 'recall_staff') q = q.eq('staff_id', user.id); else if (opts.staffId) q = q.eq('staff_id', opts.staffId);
   const { data: rows, error } = await q;
   if (error) throw new Error(`Call history load failed: ${error.message}`);
@@ -312,18 +384,84 @@ export async function listCalls(user: any, opts: { patientId?: string; staffId?:
   const patientIds = Array.from(new Set(calls.map((c: any) => c.patient_id).filter(Boolean)));
   const usersById = new Map<string, any>(); const patientsById = new Map<string, any>(); const bookingsByCallId = new Map<string, any>();
   for (const chunk of chunkArray(staffIds, 500)) {
-    const { data: users } = await db().from('app_users').select('id,name,email,role,is_active').in('id', chunk);
+    const { data: users, error: userErr } = await db().from('app_users').select('id,name,email,role,is_active').in('id', chunk);
+    if (userErr) throw new Error(`Call staff load failed: ${userErr.message}`);
     for (const u of users || []) usersById.set(u.id, u);
   }
   for (const chunk of chunkArray(patientIds, 500)) {
-    const { data: patients } = await db().from('clean_patients').select('*').in('id', chunk);
+    const { data: patients, error: patientErr } = await db().from('clean_patients').select('*').in('id', chunk);
+    if (patientErr) throw new Error(`Call patient load failed: ${patientErr.message}`);
     for (const p of patients || []) patientsById.set(p.id, p);
   }
   for (const chunk of chunkArray(calls.map((c: any) => c.id), 500)) {
-    const { data: bookings } = await db().from('bookings').select('*').in('call_attempt_id', chunk);
+    const { data: bookings, error: bookingErr } = await db().from('bookings').select('*').in('call_attempt_id', chunk);
+    if (bookingErr) throw new Error(`Call booking load failed: ${bookingErr.message}`);
     for (const b of bookings || []) bookingsByCallId.set(b.call_attempt_id, b);
   }
   return calls.map((c: any) => ({ ...c, staff: usersById.get(c.staff_id) || null, patient: patientsById.get(c.patient_id) || null, booking: bookingsByCallId.get(c.id) || null }));
+}
+
+export async function getCallMonitoring(user: any, opts: { staffId?: string; startDate?: string; endDate?: string; limit?: number }) {
+  const calls = await listCalls(user, { staffId: opts.staffId, startDate: opts.startDate, endDate: opts.endDate, limit: opts.limit || 2000 });
+  const uniquePatients = new Set(calls.map((c: any) => c.patient_id).filter(Boolean));
+  const bookings = calls.filter((c: any) => c.booking_made).length;
+  const reached = calls.filter((c: any) => c.reached).length;
+  const staffMap = new Map<string, any>();
+  const staffDailyMap = new Map<string, any>();
+  const dailyTotalMap = new Map<string, any>();
+  for (const c of calls) {
+    const staffId = c.staff_id || 'unknown';
+    const staffName = c.staff?.name || 'Unknown staff';
+    const date = String(c.attempt_at || c.created_at || '').slice(0, 10) || 'Undated';
+    const total = staffMap.get(staffId) || { staff_id: staffId, staff_name: staffName, calls: 0, uniquePatients: new Set<string>(), bookings: 0, reached: 0 };
+    total.calls += 1;
+    if (c.patient_id) total.uniquePatients.add(c.patient_id);
+    if (c.booking_made) total.bookings += 1;
+    if (c.reached) total.reached += 1;
+    staffMap.set(staffId, total);
+    const k = `${date}|${staffId}`;
+    const day = staffDailyMap.get(k) || { date, staff_id: staffId, staff_name: staffName, calls: 0, bookings: 0, reached: 0 };
+    day.calls += 1;
+    if (c.booking_made) day.bookings += 1;
+    if (c.reached) day.reached += 1;
+    staffDailyMap.set(k, day);
+    const d = dailyTotalMap.get(date) || { date, calls: 0, bookings: 0, reached: 0 };
+    d.calls += 1;
+    if (c.booking_made) d.bookings += 1;
+    if (c.reached) d.reached += 1;
+    dailyTotalMap.set(date, d);
+  }
+  const staffTotals = Array.from(staffMap.values()).map((s: any) => ({ ...s, uniquePatients: s.uniquePatients.size })).sort((a, b) => b.calls - a.calls || a.staff_name.localeCompare(b.staff_name));
+  const staffDaily = Array.from(staffDailyMap.values()).sort((a, b) => a.date.localeCompare(b.date) || a.staff_name.localeCompare(b.staff_name));
+  const dailyTotals = Array.from(dailyTotalMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+  return { summary: { totalCalls: calls.length, uniquePatients: uniquePatients.size, bookings, reached }, staffTotals, staffDaily, dailyTotals, recentCalls: calls.slice(0, 200) };
+}
+
+function csvEscape(value: any) {
+  const text = String(value ?? '');
+  if (/[",\n\r]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
+  return text;
+}
+
+export async function exportCallsCsv(user: any, opts: { staffId?: string; startDate?: string; endDate?: string }) {
+  const calls = await listCalls(user, { staffId: opts.staffId, startDate: opts.startDate, endDate: opts.endDate, limit: 10000 });
+  const headers = ['Call date','Patient','Phone','Assigned to','Caller','Outcome','Reached','Booking made','Appointment date','Next action','Next action date','Patient feedback','Notes'];
+  const rows = calls.map((c: any) => [
+    String(c.attempt_at || c.created_at || '').slice(0, 19).replace('T', ' '),
+    c.patient?.display_name || '',
+    c.patient?.standard_phone || '',
+    c.patient?.assigned_user?.name || c.patient?.assigned_to || '',
+    c.staff?.name || '',
+    c.outcome || '',
+    c.reached ? 'Yes' : 'No',
+    c.booking_made ? 'Yes' : 'No',
+    c.appointment_date || c.booking?.appointment_date || '',
+    c.next_action || '',
+    c.next_action_date || '',
+    c.patient_feedback || '',
+    c.notes || ''
+  ]);
+  return [headers, ...rows].map(row => row.map(csvEscape).join(',')).join('\n');
 }
 
 export async function createCall(user: any, body: any) {
@@ -390,17 +528,40 @@ export async function clearStaffCalls(session: any, staffId: string, confirmText
   if (String(confirmText || '').trim().toUpperCase() !== 'CLEAR') throw new Error('Type CLEAR to confirm call log cleanup.');
   const staff = await getUserById(staffId);
   if (!staff) throw new Error('Staff user not found');
-  const calls = await selectAll<any>('call_attempts', '*').then(rows => rows.filter(c => c.staff_id === staffId));
-  const callIds = calls.map(c => c.id); const affectedPatientIds = Array.from(new Set(calls.map(c => c.patient_id)));
+  const calls: any[] = [];
+  const pageSize = 1000;
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await db().from('call_attempts').select('*').eq('staff_id', staffId).range(from, from + pageSize - 1);
+    if (error) throw new Error(`Call cleanup selection failed: ${error.message}`);
+    calls.push(...(data || []));
+    if (!data || data.length < pageSize) break;
+  }
+  const callIds = calls.map(c => c.id);
+  const affectedPatientIds = Array.from(new Set(calls.map(c => c.patient_id).filter(Boolean)));
   let removedBookings = 0;
   for (const chunk of chunkArray(callIds, 500)) {
-    const { count } = await db().from('bookings').delete({ count: 'exact' }).in('call_attempt_id', chunk);
+    const { count, error: bErr } = await db().from('bookings').delete({ count: 'exact' }).in('call_attempt_id', chunk);
+    if (bErr) throw new Error(`Booking cleanup failed: ${bErr.message}`);
     removedBookings += count || 0;
-    await db().from('call_attempts').delete().in('id', chunk);
+    const { error: cErr } = await db().from('call_attempts').delete().in('id', chunk);
+    if (cErr) throw new Error(`Call cleanup failed: ${cErr.message}`);
   }
-  await db().from('bookings').delete().eq('staff_id', staffId);
+  const { count: extraBookings } = await db().from('bookings').delete({ count: 'exact' }).eq('staff_id', staffId);
+  removedBookings += extraBookings || 0;
   await db().from('data_quality_flags').update({ status: 'closed', closed_at: nowIso(), closed_by: session.id, closure_note: 'Closed during admin test/training call cleanup.' }).eq('staff_id', staffId).eq('status', 'open');
   for (const pid of affectedPatientIds) await recomputePatientStatus(pid);
+  // Safety reset: after training cleanup, patients that are still assigned to this staff member and now have no calls
+  // must return to the active assigned queue instead of remaining hidden as called/follow-up/booked.
+  for (const chunk of chunkArray(affectedPatientIds, 500)) {
+    const { data: remaining, error: remainErr } = await db().from('call_attempts').select('patient_id').in('patient_id', chunk);
+    if (remainErr) throw new Error(`Post-cleanup call check failed: ${remainErr.message}`);
+    const stillWorked = new Set((remaining || []).map((r: any) => r.patient_id));
+    const resetIds = chunk.filter(id => !stillWorked.has(id));
+    if (resetIds.length) {
+      const { error: resetErr } = await db().from('clean_patients').update({ assignment_status: 'assigned', do_not_call: false, updated_at: nowIso() }).eq('assigned_to', staffId).in('id', resetIds);
+      if (resetErr) throw new Error(`Post-cleanup patient reset failed: ${resetErr.message}`);
+    }
+  }
   return { staff: publicUser(staff), removedCalls: calls.length, removedBookings, affectedPatients: affectedPatientIds.length, closedFlags: 0 };
 }
 
