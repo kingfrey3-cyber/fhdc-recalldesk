@@ -42,7 +42,7 @@ export default function CallingPage() {
     const activeSearch = searchOverride ?? search;
     setError('');
     try {
-      const meData = await fetch('/api/me').then(parseJsonResponse);
+      const meData = await fetch('/api/me', { cache: 'no-store', credentials: 'same-origin' }).then(parseJsonResponse);
       const currentUser = meData.user;
       setMe(currentUser);
       if (!currentUser) throw new Error('You are not logged in. Please log in again.');
@@ -53,8 +53,8 @@ export default function CallingPage() {
       if (['admin','manager'].includes(currentUser.role) && staffFilter) params.set('staffId', staffFilter);
 
       const [p, u] = await Promise.all([
-        fetch(`/api/patients?${params.toString()}`).then(parseJsonResponse),
-        fetch('/api/users').then(parseJsonResponse)
+        fetch(`/api/patients?${params.toString()}`, { cache: 'no-store', credentials: 'same-origin' }).then(parseJsonResponse),
+        fetch('/api/users', { cache: 'no-store', credentials: 'same-origin' }).then(parseJsonResponse)
       ]);
       setPatients(p.patients || []);
       setUsers(u.users || []);
@@ -75,7 +75,7 @@ export default function CallingPage() {
     try {
       const res = await fetch('/api/patients/assign', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(assign) });
       const data = await parseJsonResponse(res);
-      setMessage(`${data.assigned} patients assigned.`); load();
+      setMessage(`${data.assigned} patients assigned. Refreshing assignment view...`); setStatus(''); await load();
     } catch (error: any) {
       setError(error.message || 'Assignment failed');
     }
@@ -115,7 +115,7 @@ export default function CallingPage() {
     setCall(blankCall);
     setError('');
     try {
-      const data = await fetch(`/api/calls?patientId=${encodeURIComponent(patient.id)}`).then(parseJsonResponse);
+      const data = await fetch(`/api/calls?patientId=${encodeURIComponent(patient.id)}`, { cache: 'no-store', credentials: 'same-origin' }).then(parseJsonResponse);
       setPatientCalls(data.calls || []);
     } catch (error: any) {
       setPatientCalls([]);
@@ -125,7 +125,7 @@ export default function CallingPage() {
 
   async function refreshPatientCalls(patientId = selected?.id) {
     if (!patientId) return;
-    const data = await fetch(`/api/calls?patientId=${encodeURIComponent(patientId)}`).then(parseJsonResponse);
+    const data = await fetch(`/api/calls?patientId=${encodeURIComponent(patientId)}`, { cache: 'no-store', credentials: 'same-origin' }).then(parseJsonResponse);
     setPatientCalls(data.calls || []);
   }
 

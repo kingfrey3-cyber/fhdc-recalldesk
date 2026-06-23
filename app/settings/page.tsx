@@ -22,6 +22,8 @@ export default function SettingsPage() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const [createBusy, setCreateBusy] = useState(false);
+  const [deleteBusyId, setDeleteBusyId] = useState('');
 
   const canAdmin = useMemo(() => me?.role === 'admin', [me]);
   const canManage = useMemo(() => ['admin','manager'].includes(me?.role), [me]);
@@ -45,15 +47,19 @@ export default function SettingsPage() {
   useEffect(() => { load(); }, []);
 
   async function createUser(e: React.FormEvent) {
-    e.preventDefault(); setMessage(''); setError('');
+    e.preventDefault();
+    if (createBusy) return;
+    setMessage(''); setError(''); setCreateBusy(true);
     try {
       const res = await fetch('/api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
-      await parseJsonResponse(res);
-      setMessage('User created. Give the staff member the temporary password and ask them to change it under Account after first login.');
+      const data = await parseJsonResponse(res);
+      setMessage(`User created: ${data.user?.name || form.name}. Give the staff member the temporary password and ask them to change it under Account after first login.`);
       setForm(blankCreate);
-      load();
+      await load();
     } catch (error: any) {
       setError(error.message || 'Failed to create user');
+    } finally {
+      setCreateBusy(false);
     }
   }
 
@@ -110,6 +116,23 @@ export default function SettingsPage() {
     }
   }
 
+  async function deleteUser(user: any) {
+    setMessage(''); setError('');
+    if (!user?.id) return;
+    if (!confirm(`Delete user ${user.name}? This removes the login and unassigns any pending patients assigned to that user. Historical call logs remain for audit reference.`)) return;
+    setDeleteBusyId(user.id);
+    try {
+      const res = await fetch(`/api/users/${user.id}`, { method: 'DELETE' });
+      const data = await parseJsonResponse(res);
+      setMessage(`Deleted ${data.deletedUser?.name || user.name}. ${data.unassignedPatients || 0} pending assigned patient records were released.`);
+      await load();
+    } catch (error: any) {
+      setError(error.message || 'Failed to delete user');
+    } finally {
+      setDeleteBusyId('');
+    }
+  }
+
   async function clearStaffCalls(e: React.FormEvent) {
     e.preventDefault(); setMessage(''); setError('');
     if (!cleanup.staffId) { setError('Select the staff member first.'); return; }
@@ -152,7 +175,7 @@ export default function SettingsPage() {
             <div className="form-field"><label>Email</label><input value={form.email} onChange={e => setForm({...form, email:e.target.value})} type="email" required /></div>
             <div className="form-field"><label>Role</label><select value={form.role} onChange={e => setForm({...form, role:e.target.value})}><option value="admin">Admin</option><option value="manager">Manager</option><option value="recall_staff">Recall Staff</option><option value="verifier">Verifier</option><option value="finance">Finance</option><option value="viewer">Viewer</option></select></div>
             <div className="form-field"><label>Temporary password</label><PasswordField value={form.password} onChange={value => setForm({...form, password:value})} minLength={8} autoComplete="new-password" /></div>
-            <div className="form-field full"><button>Create User</button></div>
+            <div className="form-field full"><button disabled={createBusy}>{createBusy ? 'Creating user...' : 'Create User'}</button></div>
           </form>
         </div>}
 
@@ -173,6 +196,7 @@ export default function SettingsPage() {
                 {canAdmin && <div className="user-actions">
                   <button type="button" className="secondary small" onClick={() => openEdit(u)}>Edit</button>
                   <button type="button" className="ghost small" onClick={() => openReset(u)}>Reset Password</button>
+                  <button type="button" className="danger small" disabled={deleteBusyId === u.id} onClick={() => deleteUser(u)}>{deleteBusyId === u.id ? 'Deleting...' : 'Delete'}</button>
                 </div>}
               </div>
             ))}

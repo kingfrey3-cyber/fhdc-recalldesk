@@ -162,11 +162,13 @@ function useSupabaseStorage() {
   return Boolean(supabaseAdmin && process.env.STORAGE_DRIVER !== 'local');
 }
 
-async function readSupabaseStore(): Promise<Store> {
+async function readSupabaseStore(fresh = false): Promise<Store> {
   if (!supabaseAdmin) throw new Error('Supabase is not configured. Check SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.');
 
-  const cached = getCachedStore();
-  if (cached) return cached;
+  if (!fresh) {
+    const cached = getCachedStore();
+    if (cached) return cached;
+  }
 
   const { data, error } = await supabaseAdmin
     .from('recalldesk_app_store')
@@ -214,7 +216,18 @@ async function writeSupabaseStore(store: Store) {
 }
 
 export async function readStore(): Promise<Store> {
-  if (useSupabaseStorage()) return readSupabaseStore();
+  if (useSupabaseStorage()) return readSupabaseStore(false);
+
+  const local = await readLocalFileStore();
+  if (local) return local;
+
+  const store = emptyStore();
+  await writeStore(store);
+  return store;
+}
+
+export async function readStoreFresh(): Promise<Store> {
+  if (useSupabaseStorage()) return readSupabaseStore(true);
 
   const local = await readLocalFileStore();
   if (local) return local;
@@ -242,13 +255,20 @@ export async function updateStore<T>(fn: (store: Store) => T | Promise<T>): Prom
   return result;
 }
 
+export async function updateStoreFresh<T>(fn: (store: Store) => T | Promise<T>): Promise<T> {
+  const store = await readStoreFresh();
+  const result = await fn(store);
+  await writeStore(store);
+  return result;
+}
+
 export function publicUser(user: AppUser) {
   const { password_hash, ...safe } = user;
   return safe;
 }
 
 export async function createLocalUser(input: { name: string; email: string; role: AppRole; password: string; is_active?: boolean }) {
-  return updateStore(async store => {
+  return updateStoreFresh(async store => {
     const email = String(input.email || '').trim().toLowerCase();
     if (!email) throw new Error('Email is required');
     if (store.app_users.some(u => u.email === email)) throw new Error('A user with this email already exists');
